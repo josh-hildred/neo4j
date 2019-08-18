@@ -36,6 +36,7 @@ import java.util.Map.Entry;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
 
+import com.sun.org.apache.xpath.internal.operations.Bool;
 import org.neo4j.csv.reader.IllegalMultilineFieldException;
 import org.neo4j.graphdb.factory.GraphDatabaseSettings;
 import org.neo4j.helpers.Args;
@@ -471,7 +472,7 @@ public class ImportTool
                     (Boolean) Options.CACHE_ON_HEAP.defaultValue() );
             configuration = importConfiguration(
                     processors, defaultSettingsSuitableForTests, dbConfig, maxMemory, storeDir,
-                    allowCacheOnHeap, defaultHighIO );
+                    allowCacheOnHeap, defaultHighIO, false );
             input = new CsvInput( nodeData( inputEncoding, nodesFiles ), defaultFormatNodeFileHeader(),
                     relationshipData( inputEncoding, relationshipsFiles ), defaultFormatRelationshipFileHeader(),
                     idType, csvConfiguration( args, defaultSettingsSuitableForTests ), badCollector,
@@ -722,16 +723,16 @@ public class ImportTool
     }
 
     public static org.neo4j.unsafe.impl.batchimport.Configuration importConfiguration(
-            Number processors, boolean defaultSettingsSuitableForTests, Config dbConfig, File storeDir, Boolean defaultHighIO )
+            Number processors, boolean defaultSettingsSuitableForTests, Config dbConfig, File storeDir, Boolean defaultHighIO, Boolean clusterRecords )
     {
         return importConfiguration(
                 processors, defaultSettingsSuitableForTests, dbConfig, null, storeDir,
-                DEFAULT.allowCacheAllocationOnHeap(), defaultHighIO );
+                DEFAULT.allowCacheAllocationOnHeap(), defaultHighIO, clusterRecords);
     }
 
     public static org.neo4j.unsafe.impl.batchimport.Configuration importConfiguration(
             Number processors, boolean defaultSettingsSuitableForTests, Config dbConfig, Long maxMemory, File storeDir,
-            boolean allowCacheOnHeap, Boolean defaultHighIO )
+            boolean allowCacheOnHeap, Boolean defaultHighIO, Boolean clusterRecords )
     {
         return new org.neo4j.unsafe.impl.batchimport.Configuration()
         {
@@ -769,6 +770,12 @@ public class ImportTool
             public boolean allowCacheAllocationOnHeap()
             {
                 return allowCacheOnHeap;
+            }
+
+            @Override
+            public boolean clusterRecords()
+            {
+                return clusterRecords;
             }
         };
     }

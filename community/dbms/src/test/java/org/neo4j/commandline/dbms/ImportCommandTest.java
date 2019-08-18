@@ -241,6 +241,7 @@ class ImportCommandTest
                             "                          [--max-memory=<max-memory-that-importer-can-use>]%n" +
                             "                          [--f=<File containing all arguments to this import>]%n" +
                             "                          [--high-io=<true/false>]%n" +
+                            "                          [--cluster-data[=<true|false>]]%n" +
                             "usage: neo4j-admin import --mode=database [--database=<name>]%n" +
                             "                          [--additional-config=<config-file-path>]%n" +
                             "                          [--from=<source-directory>]%n" +
@@ -323,7 +324,10 @@ class ImportCommandTest
                             "      to this file argument is not supported. [default:]%n" +
                             "  --high-io=<true/false>%n" +
                             "      Ignore environment-based heuristics, and assume that the target storage%n" +
-                            "      subsystem can support parallel IO with high throughput. [default:null]%n" ),
+                            "      subsystem can support parallel IO with high throughput. [default:null]%n" +
+                            "  --cluster-data=<true|false>%n" +
+                            "      if specified records are physically clustered on disk after import%n" +
+                            "      [default:false]%n" ),
                     baos.toString() );
         }
     }

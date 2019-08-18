@@ -157,7 +157,10 @@ public class ImportCommand implements AdminCommand
             .withArgument( new OptionalNamedArg( "high-io",
                     "true/false",
                     null,
-                    "Ignore environment-based heuristics, and assume that the target storage subsystem can support parallel IO with high throughput." ) );
+                    "Ignore environment-based heuristics, and assume that the target storage subsystem can support parallel IO with high throughput." ) )
+            .withArgument( new OptionalBooleanArg( "cluster-data",
+                    false,
+                    "if specified records are physically clustered on disk after import" ) );
     }
 
     static

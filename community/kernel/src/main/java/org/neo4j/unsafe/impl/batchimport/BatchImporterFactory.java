@@ -19,6 +19,10 @@
  */
 package org.neo4j.unsafe.impl.batchimport;
 
+import java.io.BufferedWriter;
+import java.io.FileWriter;
+import java.io.IOException;
+import java.io.PrintWriter;
 import java.util.NoSuchElementException;
 
 import org.neo4j.helpers.Service;
@@ -52,6 +56,20 @@ public abstract class BatchImporterFactory extends Service
         BatchImporterFactory highestPrioritized = null;
         for ( BatchImporterFactory candidate : candidates )
         {
+            boolean failed = false;
+            PrintWriter printWriter;
+            try
+            {
+                FileWriter fileWriter = new FileWriter( "/home/josh/Projects/URA_neo4j/clusterdata.txt", true );
+                BufferedWriter bufferedWriter = new BufferedWriter( fileWriter );
+                printWriter = new PrintWriter( bufferedWriter );
+                printWriter.printf( "looking at factory with priority: " + candidate.priority + "\n");
+                printWriter.close();
+            }
+            catch ( IOException e )
+            {
+                failed = true;
+            }
             if ( highestPrioritized == null || candidate.priority > highestPrioritized.priority )
             {
                 highestPrioritized = candidate;

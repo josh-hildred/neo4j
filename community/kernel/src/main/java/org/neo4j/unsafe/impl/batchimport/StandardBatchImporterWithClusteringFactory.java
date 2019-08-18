@@ -33,13 +33,13 @@ import java.io.FileWriter;
 import java.io.IOException;
 import java.io.PrintWriter;
 
-public class StandardBatchImporterFactory extends BatchImporterFactory
+public class StandardBatchImporterWithClusteringFactory extends BatchImporterFactory
 {
-    public static final String NAME = "standard";
+    public static final String NAME = "StandardWithClustering";
 
-    public StandardBatchImporterFactory()
+    public StandardBatchImporterWithClusteringFactory()
     {
-        super( NAME, 1 );
+        super( NAME, 2 );
     }
 
     @Override
@@ -61,7 +61,7 @@ public class StandardBatchImporterFactory extends BatchImporterFactory
         {
             failed = true;
         }
-        return new ParallelBatchImporter( directoryStructure, fileSystem, externalPageCache, config, logService, executionMonitor,
+        return new ParallelBatchImporterWithClustering( directoryStructure, fileSystem, externalPageCache, config, logService, executionMonitor,
                 additionalInitialIds, dbConfig, recordFormats, monitor, scheduler );
     }
 }

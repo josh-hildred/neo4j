@@ -1,1 +1,2 @@
 org.neo4j.unsafe.impl.batchimport.StandardBatchImporterFactory
+org.neo4j.unsafe.impl.batchimport.StandardBatchImporterWithClusteringFactory

@@ -173,6 +173,14 @@ public interface Configuration
         return false;
     }
 
+    /**
+     * Controls whether or not to physically cluster records on disk
+     */
+    default boolean clusterRecords()
+    {
+        return false;
+    }
+
     Configuration DEFAULT = new Configuration()
     {
     };
@@ -269,6 +277,12 @@ public interface Configuration
         public boolean allowCacheAllocationOnHeap()
         {
             return defaults.allowCacheAllocationOnHeap();
+        }
+
+        @Override
+        public boolean clusterRecords()
+        {
+            return defaults.clusterRecords();
         }
     }
 

@@ -71,6 +71,7 @@ class CsvImporter implements Importer
     private final boolean ignoreDuplicateNodes;
     private final boolean ignoreExtraColumns;
     private final Boolean highIO;
+    private final Boolean clusterRecords;
 
     CsvImporter( Args args, Config databaseConfig, OutsideWorld outsideWorld ) throws IncorrectUsage
     {
@@ -83,6 +84,7 @@ class CsvImporter implements Importer
         ignoreExtraColumns = args.getBoolean( "ignore-extra-columns", false );
         ignoreDuplicateNodes = args.getBoolean( "ignore-duplicate-nodes", false );
         ignoreBadRelationships = args.getBoolean( "ignore-missing-nodes", false );
+        clusterRecords = args.getBoolean( "cluster-data", false);
         try
         {
             validateInputFiles( nodesFiles, relationshipsFiles );
@@ -111,7 +113,7 @@ class CsvImporter implements Importer
                 collect( ignoreBadRelationships, ignoreDuplicateNodes, ignoreExtraColumns ) );
 
         Configuration configuration = new WrappedBatchImporterConfigurationForNeo4jAdmin( importConfiguration(
-                null, false, databaseConfig, storeDir, highIO ) );
+                null, false, databaseConfig, storeDir, highIO, clusterRecords ) );
 
         // Extract the default time zone from the database configuration
         ZoneId dbTimeZone = databaseConfig.get( GraphDatabaseSettings.db_temporal_timezone );
