@@ -21,6 +21,7 @@ package org.neo4j.kernel.impl.storageengine.impl.recordstorage;
 
 
 import org.neo4j.kernel.impl.store.NodeStore;
+import org.neo4j.kernel.impl.store.PropertyStore;
 import org.neo4j.kernel.impl.store.RelationshipGroupStore;
 import org.neo4j.kernel.impl.store.RelationshipStore;
 
@@ -41,5 +42,16 @@ public class RecordCursorHack //extends AutoClosable
     public RecordRelationshipCursorHack getRelationshipCursor( RelationshipStore relationshipStore, RelationshipGroupStore relationshipGroupStore )
     {
         return new RecordRelationshipCursorHack( relationshipStore, relationshipGroupStore );
+    }
+    public static class RecordPropertyCursorHack extends RecordPropertyCursor
+    {
+        RecordPropertyCursorHack( PropertyStore propertyStore )
+        {
+            super( propertyStore );
+        }
+    }
+    public RecordPropertyCursorHack getPropertyCursor( PropertyStore propertyStore )
+    {
+        return new RecordPropertyCursorHack( propertyStore );
     }
 }

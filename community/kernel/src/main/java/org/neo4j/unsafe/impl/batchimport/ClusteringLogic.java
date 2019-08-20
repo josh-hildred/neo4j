@@ -19,8 +19,12 @@
  */
 package org.neo4j.unsafe.impl.batchimport;
 
+import org.neo4j.graphdb.Relationship;
 import org.neo4j.kernel.impl.storageengine.impl.recordstorage.RecordCursorHack;
 import org.neo4j.kernel.impl.storageengine.impl.recordstorage.RecordNodeCursor;
+import org.neo4j.kernel.impl.storageengine.impl.recordstorage.RecordPropertyCursor;
+import org.neo4j.kernel.impl.store.record.NodeRecord;
+import org.neo4j.kernel.impl.store.record.Record;
 import org.neo4j.unsafe.impl.batchimport.store.BatchingNeoStores;
 import org.neo4j.unsafe.impl.batchimport.store.ClusteringNeoStores;
 import java.io.BufferedWriter;
@@ -28,11 +32,12 @@ import java.io.Closeable;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.io.PrintWriter;
+import java.util.LinkedList;
 
 
 public class ClusteringLogic implements Closeable
 {
-    //private final ClusteringNeoStores finalNeoStores;
+    private final ClusteringNeoStores finalNeoStores;
     private final BatchingNeoStores initialNeostores;
     private final RecordCursorHack cursorFactory;
 
@@ -41,7 +46,7 @@ public class ClusteringLogic implements Closeable
 
     public ClusteringLogic( ClusteringNeoStores finalNeoStores, BatchingNeoStores initialNeostores )
     {
-        //this.finalNeoStores = finalNeoStores;
+        this.finalNeoStores = finalNeoStores;
         this.initialNeostores = initialNeostores;
         this.cursorFactory = new RecordCursorHack();
     }
@@ -100,7 +105,6 @@ public class ClusteringLogic implements Closeable
                 singleNodeCursor.close();
             }
         }
-        nodeCache.calculateClusteringData();
     }
 
     private ClusteringNodeCache.MergingQueue exploreNeighbors( long Id, long relId,  int ep0, int ep, int i, int j )
@@ -133,9 +137,84 @@ public class ClusteringLogic implements Closeable
         return nq;
     }
 
+    // this should really be done when initial import is done but for simplicity(with a performance hit ) do it here
+    public void calculateCounts()
+    {
+        RecordNodeCursor nodeCursor = cursorFactory.getNodeCursor( initialNeostores.getNodeStore() );
+        nodeCursor.scan();
+        RecordCursorHack.RecordPropertyCursorHack propertyCursor = cursorFactory.getPropertyCursor( initialNeostores.getPropertyStore() );
+        RecordCursorHack.RecordRelationshipCursorHack relationshipCursor = cursorFactory.getRelationshipCursor(initialNeostores.getRelationshipStore(),
+                initialNeostores.getRelationshipGroupStore() );
+        while ( nodeCursor.next() )
+        {
+            propertyCursor.reset();
+            propertyCursor.init( nodeCursor.getLabelField() );
+            while( propertyCursor.next() )
+            {
+                nodeCache.incrementNodePropertiesCounts( (int) nodeCursor.getId(), 1);
+            }
+            if( !nodeCursor.isDense() )
+            {
+                relationshipCursor.reset();
+                relationshipCursor.init(nodeCursor.getId(), nodeCursor.getNextRel());
+                while ( relationshipCursor.next() )
+                {
+                    nodeCache.incrementRelationshipsCounts( (int) nodeCursor.getId(), 1);
+                    propertyCursor.reset();
+                    propertyCursor.init( relationshipCursor.getNextProp() );
+                    while ( propertyCursor.next() )
+                    {
+                        nodeCache.incrementRelationshipPropertiesCounts((int) nodeCursor.getId(), 1);
+                    }
+                }
+            }
+        }
+        nodeCache.calculateClusteringData();
+    }
+
     public void writeToStores()
     {
+        FirstFitIdGetter nodeIdsGetter = new FirstFitIdGetter( finalNeoStores.getNodeStore() );
+        FirstFitIdGetter relIdsGetter = new FirstFitIdGetter( finalNeoStores.getRelationshipStore() );
+        FirstFitIdGetter relGroupIdsGetter = new FirstFitIdGetter( finalNeoStores.getRelationshipGroupStore() );
+        FirstFitIdGetter propIdsGetter = new FirstFitIdGetter( finalNeoStores.getPropertyStore() );
+        for ( int i = 2; i < nodeCache.getNumberOfClusters(); i++ )
+        {
+            int numRelationshipRecords = nodeCache.getClusterRels( i );
+            FirstFitIdGetter.FirstFitIds relId = relIdsGetter.firstFit( numRelationshipRecords );
+            int numRelationshipGroupRecords = nodeCache.getClusterRelGroups( i );
+            //FirstFitIdGetter.FirstFitIds relGroupId = relGroupIdsGetter.firstFit( numRelationshipGroupRecords );
+            int numPropertyRecords = nodeCache.getClusterProps( i );
+            FirstFitIdGetter.FirstFitIds propId = propIdsGetter.firstFit( numPropertyRecords );
+            int numNodesRecords = nodeCache.sizeOfCluster( i );
+            FirstFitIdGetter.FirstFitIds newNodeId = nodeIdsGetter.firstFit( numNodesRecords );
+            LinkedList nodes = nodeCache.getClusterNodes( i );
+            NodeCopier nodeCopier = new NodeCopier( initialNeostores.getNeoStores(), finalNeoStores.getNeoStores(), newNodeId, propId );
+            RelationshipCopier relationshipCopier = new RelationshipCopier( initialNeostores.getNeoStores(), finalNeoStores.getNeoStores(), relId, propId );
+            while( !nodes.isEmpty() )
+            {
+                long nodeId = (long) nodes.pop();
+                nodeCopier.copy( nodeId, relationshipCopier );
+            }
+        }
+        // fill up rest with noise
+        LinkedList noise = nodeCache.getClusterNodes(0 );
 
+        int numRelationshipRecords = nodeCache.getClusterRels( 0 );
+        FirstFitIdGetter.FirstFitIds relId = relIdsGetter.firstFit( numRelationshipRecords );
+        int numRelationshipGroupRecords = nodeCache.getClusterRelGroups( 0 );
+        FirstFitIdGetter.FirstFitIds relGroupId = relGroupIdsGetter.firstFit( numRelationshipGroupRecords );
+        int numPropertyRecords = nodeCache.getClusterProps( 0 );
+        FirstFitIdGetter.FirstFitIds propId = propIdsGetter.firstFit( numPropertyRecords );
+        int numNodesRecords = nodeCache.sizeOfCluster( 0 );
+        FirstFitIdGetter.FirstFitIds newNodeId = nodeIdsGetter.firstFit( numNodesRecords );
+
+        NodeCopier nodeCopier = new NodeCopier( initialNeostores.getNeoStores(), finalNeoStores.getNeoStores(), newNodeId, propId );
+        RelationshipCopier relationshipCopier = new RelationshipCopier( initialNeostores.getNeoStores(), finalNeoStores.getNeoStores(), relId, propId )
+        while ( !noise.isEmpty() )
+        {
+            nodeCopier.copy( (long) noise.pop(), relationshipCopier );
+        }
     }
 
     public void printClusterData()

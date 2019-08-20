@@ -24,6 +24,7 @@ import java.io.FileWriter;
 import java.io.IOException;
 import java.io.PrintWriter;
 import java.util.LinkedList;
+import java.util.Vector;
 
 public class ClusteringNodeCache implements AutoCloseable
 {
@@ -35,6 +36,14 @@ public class ClusteringNodeCache implements AutoCloseable
     private MergingQueue queue;
     private int highClusterId;
     private int size;
+    private int[] relationshipsCounts;
+    private int[] relationshipsPropertyCounts;
+    private int[] nodePropertyCounts;
+    private int[] relationshipGroupsCounts;
+    private int[] clusterRelationshipCounts;
+    private int[] clusterRelationshipsPropertiesCounts;
+    private int[] clusterRelationshipGroupsCounts;
+    private int[] clusterNodePropertiesCounts;
 
     ClusteringNodeCache( int size )
     {
@@ -42,6 +51,10 @@ public class ClusteringNodeCache implements AutoCloseable
         nodeLabels = new int[size];
         iArr = new int[size];
         jArr = new int[size];
+        this.relationshipGroupsCounts = new int[size];
+        this.relationshipsCounts = new int[size];
+        this.nodePropertyCounts = new int[size];
+        this.relationshipsPropertyCounts = new int[size];
         this.queue = new MergingQueue();
         this.highClusterId = 0;
     }
@@ -55,10 +68,31 @@ public class ClusteringNodeCache implements AutoCloseable
     {
         nodeLabels[(int) id] = label;
     }
+
     int nextClusterId()
     {
         highClusterId++;
         return highClusterId;
+    }
+
+    public void incrementRelationshipsCounts(int i, int n)
+    {
+        relationshipsCounts[i - 1] += n;
+    }
+
+    public void incrementRelationshipsGroupsCounts(int i, int n)
+    {
+        relationshipGroupsCounts[i - 1] += n;
+    }
+
+    public void incrementRelationshipPropertiesCounts(int i, int n)
+    {
+        relationshipsPropertyCounts[i - 1] += n;
+    }
+
+    public void incrementNodePropertiesCounts( int i, int n)
+    {
+        nodePropertyCounts[i - 1] += n;
     }
 
     class MergingQueue
@@ -122,13 +156,36 @@ public class ClusteringNodeCache implements AutoCloseable
     public void calculateClusteringData()
     {
         clusterSizes = new int [highClusterId + 2];
+        clusterRelationshipCounts = new int [highClusterId + 2];
+        clusterRelationshipsPropertiesCounts =  new int [highClusterId + 2];
+        clusterRelationshipGroupsCounts = new int [highClusterId + 2];
+        clusterNodePropertiesCounts = new int [highClusterId + 2];
         clusterData = new LinkedList[highClusterId+2];
         for ( int i = 0 ; i < size; i++ )
         {
+            clusterNodePropertiesCounts[nodeLabels[i] + 1] = nodePropertyCounts[i];
+            clusterRelationshipCounts[nodeLabels[i] + 1] = relationshipsCounts[i];
+            clusterRelationshipsPropertiesCounts[nodeLabels[i] + 1] = relationshipsPropertyCounts[i];
             clusterSizes[nodeLabels[i] + 1]++;
             clusterData[nodeLabels[i] + 1].push(i);
         }
     }
+
+    public int getNumberOfClusters()
+    {
+        return highClusterId + 2;
+    }
+
+    public int sizeOfCluster(int id)
+    {
+        return clusterSizes[id];
+    }
+
+    public LinkedList getClusterNodes(int id)
+    {
+        return clusterData[id];
+    }
+
     void printClusterData()
     {
         boolean failed = false;
