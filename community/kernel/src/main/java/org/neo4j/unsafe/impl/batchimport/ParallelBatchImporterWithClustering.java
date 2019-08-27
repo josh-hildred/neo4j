@@ -82,23 +82,27 @@ public class ParallelBatchImporterWithClustering implements BatchImporter
     @Override
     public void doImport( Input input ) throws IOException
     {
-        DatabaseLayout layout;
+        DatabaseLayout batchImportLayout;
+        DatabaseLayout clusteringImportLayout;
         if ( config.clusterRecords() )
         {
-            layout = DatabaseLayout.of(directoryStructure.file(INITIAL_STORE_NAME), INITIAL_STORE_NAME);
+            batchImportLayout = DatabaseLayout.of(directoryStructure.file(INITIAL_STORE_NAME), INITIAL_STORE_NAME);
+            clusteringImportLayout = directoryStructure;
         }
         else
         {
-            layout = directoryStructure;
+            batchImportLayout = directoryStructure;
+            clusteringImportLayout = DatabaseLayout.of(directoryStructure.file(INITIAL_STORE_NAME), INITIAL_STORE_NAME);
         }
-        try ( BatchingNeoStores store = instantiateNeoStores( fileSystem, layout.databaseDirectory(), externalPageCache, recordFormats,
+        try ( BatchingNeoStores store = instantiateNeoStores( fileSystem, batchImportLayout.databaseDirectory(), externalPageCache, recordFormats,
                       config, logService, additionalInitialIds, dbConfig, jobScheduler );
-              ImportLogic logic = new ImportLogic( layout.databaseDirectory(), fileSystem, store, config, logService,
+              ImportLogic logic = new ImportLogic( batchImportLayout.databaseDirectory(), fileSystem, store, config, logService,
                       executionMonitor, recordFormats, monitor );
-              ClusteringNeoStores finalStore = ClusteringNeoStores.ClusteringNeoStoresWithExternalPageCache( fileSystem, store.getPageCache(),
-                      PageCacheTracer.NULL, layout.databaseDirectory(), recordFormats, config, logService, additionalInitialIds, dbConfig );
+              ClusteringNeoStores finalStore = ClusteringNeoStores.ClusteringNeoStores( fileSystem, clusteringImportLayout.databaseDirectory(), recordFormats,
+                      config, logService, additionalInitialIds, dbConfig, jobScheduler);
               ClusteringLogic clusterLogic = new ClusteringLogic( finalStore, store ) )
         {
+            finalStore.createNew();
             store.createNew();
             logic.initialize( input );
 
@@ -114,7 +118,9 @@ public class ParallelBatchImporterWithClustering implements BatchImporter
             {
                 clusterLogic.initialize();
                 clusterLogic.CalculateCluster(5, 25);
-                clusterLogic.printClusterData();
+                clusterLogic.calculateCounts();
+                //clusterLogic.printClusterData();
+                clusterLogic.writeToStores();
             }
             logic.success();
 

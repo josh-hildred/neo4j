@@ -80,6 +80,7 @@ import org.neo4j.unsafe.impl.batchimport.AdditionalInitialIds;
 import org.neo4j.unsafe.impl.batchimport.BatchImporter;
 import org.neo4j.unsafe.impl.batchimport.Configuration;
 import org.neo4j.unsafe.impl.batchimport.ParallelBatchImporter;
+import org.neo4j.unsafe.impl.batchimport.ParallelBatchImporterWithClustering;
 import org.neo4j.unsafe.impl.batchimport.input.Collector;
 import org.neo4j.unsafe.impl.batchimport.input.Group;
 import org.neo4j.unsafe.impl.batchimport.input.Input;
@@ -130,7 +131,52 @@ public class CsvInputBatchImportIT
         try ( JobScheduler scheduler = new ThreadPoolJobScheduler() )
         {
             BatchImporter importer =
-                    new ParallelBatchImporter( directory.databaseLayout(), fileSystemRule.get(), null, smallBatchSizeConfig(), NullLogService.getInstance(),
+                    new ParallelBatchImporter( directory.databaseLayout(), fileSystemRule.get(), null, smallBatchSizeConfig(),
+                            NullLogService.getInstance(),
+                            invisible(), AdditionalInitialIds.EMPTY, dbConfig, RecordFormatSelector.defaultFormat(), NO_MONITOR, scheduler );
+            List<InputEntity> nodeData = randomNodeData();
+            List<InputEntity> relationshipData = randomRelationshipData( nodeData );
+
+            // WHEN
+            importer.doImport( csv( nodeDataAsFile( nodeData ), relationshipDataAsFile( relationshipData ), IdType.STRING, lowBufferSize( COMMAS ),
+                    silentBadCollector( 0 ) ) );
+            // THEN
+            verifyImportedData( nodeData, relationshipData );
+        }
+    }
+
+    @Test
+    public void shouldImportAndClusterDataComingFromCsvFiles() throws Exception
+    {
+        // GIVEN
+        Config dbConfig = Config.builder().withSetting( db_timezone, LogTimeZone.SYSTEM.name() ).build();
+        try ( JobScheduler scheduler = new ThreadPoolJobScheduler() )
+        {
+            BatchImporter importer =
+                    new ParallelBatchImporterWithClustering( directory.databaseLayout(), fileSystemRule.get(), null,
+                            smallBatchSizeConfigWithClustering(), NullLogService.getInstance(),
+                            invisible(), AdditionalInitialIds.EMPTY, dbConfig, RecordFormatSelector.defaultFormat(), NO_MONITOR, scheduler );
+            List<InputEntity> nodeData = randomNodeData();
+            List<InputEntity> relationshipData = randomRelationshipData( nodeData );
+
+            // WHEN
+            importer.doImport( csv( nodeDataAsFile( nodeData ), relationshipDataAsFile( relationshipData ), IdType.STRING, lowBufferSize( COMMAS ),
+                    silentBadCollector( 0 ) ) );
+            // THEN
+            verifyImportedData( nodeData, relationshipData );
+        }
+    }
+
+    @Test
+    public void shouldImportAndNotClusterDataComingFromCsvFiles() throws Exception
+    {
+        // GIVEN
+        Config dbConfig = Config.builder().withSetting( db_timezone, LogTimeZone.SYSTEM.name() ).build();
+        try ( JobScheduler scheduler = new ThreadPoolJobScheduler() )
+        {
+            BatchImporter importer =
+                    new ParallelBatchImporterWithClustering( directory.databaseLayout(), fileSystemRule.get(), null,
+                            smallBatchSizeConfigWithoutClustering(), NullLogService.getInstance(),
                             invisible(), AdditionalInitialIds.EMPTY, dbConfig, RecordFormatSelector.defaultFormat(), NO_MONITOR, scheduler );
             List<InputEntity> nodeData = randomNodeData();
             List<InputEntity> relationshipData = randomRelationshipData( nodeData );
@@ -224,9 +270,57 @@ public class CsvInputBatchImportIT
             {
                 return 5;
             }
+
         };
     }
+    private Configuration smallBatchSizeConfigWithClustering()
+    {
+        return new Configuration()
+        {
+            @Override
+            public int batchSize()
+            {
+                return 100;
+            }
 
+            @Override
+            public int denseNodeThreshold()
+            {
+                return 5;
+            }
+
+            @Override
+            public boolean clusterRecords()
+            {
+                return true;
+            }
+
+        };
+    }
+    private Configuration smallBatchSizeConfigWithoutClustering()
+    {
+        return new Configuration()
+        {
+            @Override
+            public int batchSize()
+            {
+                return 100;
+            }
+
+            @Override
+            public int denseNodeThreshold()
+            {
+                return 5;
+            }
+
+            @Override
+            public boolean clusterRecords()
+            {
+                return false;
+            }
+
+        };
+    }
     private File relationshipDataAsFile( List<InputEntity> relationshipData ) throws IOException
     {
         File file = directory.file( "relationships.csv" );

@@ -31,7 +31,7 @@ public class ClusteringNodeCache implements AutoCloseable
     private int[] nodeLabels;
     private int[] iArr;
     private int[] jArr;
-    private LinkedList<Integer>[] clusterData;
+    private LinkedList<Long>[] clusterData;
     private int[] clusterSizes;
     private MergingQueue queue;
     private int highClusterId;
@@ -44,7 +44,7 @@ public class ClusteringNodeCache implements AutoCloseable
     private int[] clusterRelationshipsPropertiesCounts;
     private int[] clusterRelationshipGroupsCounts;
     private int[] clusterNodePropertiesCounts;
-
+    private int[] idMap;
     ClusteringNodeCache( int size )
     {
         this.size = size;
@@ -57,6 +57,7 @@ public class ClusteringNodeCache implements AutoCloseable
         this.relationshipsPropertyCounts = new int[size];
         this.queue = new MergingQueue();
         this.highClusterId = 0;
+        this.idMap = new int[size];
     }
 
     public int getLabel( long id )
@@ -75,24 +76,24 @@ public class ClusteringNodeCache implements AutoCloseable
         return highClusterId;
     }
 
-    public void incrementRelationshipsCounts(int i, int n)
+    public void incrementRelationshipsCounts( int i, int n )
     {
-        relationshipsCounts[i - 1] += n;
+        relationshipsCounts[ i ] += n;
     }
 
-    public void incrementRelationshipsGroupsCounts(int i, int n)
+    public void incrementRelationshipsGroupsCounts( int i, int n )
     {
-        relationshipGroupsCounts[i - 1] += n;
+        relationshipGroupsCounts[ i ] += n;
     }
 
-    public void incrementRelationshipPropertiesCounts(int i, int n)
+    public void incrementRelationshipPropertiesCounts( int i, int n )
     {
-        relationshipsPropertyCounts[i - 1] += n;
+        relationshipsPropertyCounts[ i ] += n;
     }
 
-    public void incrementNodePropertiesCounts( int i, int n)
+    public void incrementNodePropertiesCounts( int i, int n )
     {
-        nodePropertyCounts[i - 1] += n;
+        nodePropertyCounts[ i ] += n;
     }
 
     class MergingQueue
@@ -158,16 +159,20 @@ public class ClusteringNodeCache implements AutoCloseable
         clusterSizes = new int [highClusterId + 2];
         clusterRelationshipCounts = new int [highClusterId + 2];
         clusterRelationshipsPropertiesCounts =  new int [highClusterId + 2];
-        clusterRelationshipGroupsCounts = new int [highClusterId + 2];
+        clusterRelationshipCounts = new int [highClusterId + 2];
         clusterNodePropertiesCounts = new int [highClusterId + 2];
-        clusterData = new LinkedList[highClusterId+2];
+        clusterData = new LinkedList[highClusterId + 2];
         for ( int i = 0 ; i < size; i++ )
         {
             clusterNodePropertiesCounts[nodeLabels[i] + 1] = nodePropertyCounts[i];
             clusterRelationshipCounts[nodeLabels[i] + 1] = relationshipsCounts[i];
             clusterRelationshipsPropertiesCounts[nodeLabels[i] + 1] = relationshipsPropertyCounts[i];
             clusterSizes[nodeLabels[i] + 1]++;
-            clusterData[nodeLabels[i] + 1].push(i);
+            if ( clusterData[nodeLabels[i] + 1] == null )
+            {
+                clusterData[nodeLabels[i] + 1] = new LinkedList<>();
+            }
+            clusterData[nodeLabels[i] + 1].push( (long) i );
         }
     }
 
@@ -176,12 +181,42 @@ public class ClusteringNodeCache implements AutoCloseable
         return highClusterId + 2;
     }
 
-    public int sizeOfCluster(int id)
+    public int sizeOfCluster( int id )
     {
         return clusterSizes[id];
     }
 
-    public LinkedList getClusterNodes(int id)
+    public int getRelationshipCounts( long id )
+    {
+        return clusterRelationshipCounts[(int) id];
+    }
+
+    public int getRelationshipPropertyCounts( long id )
+    {
+        return clusterRelationshipsPropertiesCounts[(int) id];
+    }
+
+    public int getNodePropertyCount( long id )
+    {
+        return clusterNodePropertiesCounts[(int) id];
+    }
+
+    public int getRelationshipGroupCount( long id )
+    {
+        return clusterRelationshipGroupsCounts[ (int) id];
+    }
+
+    public void putIdMap( int oldId, int newId )
+    {
+        idMap[oldId] = newId;
+    }
+
+    public int getIdMap( int id )
+    {
+        return idMap[ id ];
+    }
+
+    public LinkedList getClusterNodes( int id )
     {
         return clusterData[id];
     }
