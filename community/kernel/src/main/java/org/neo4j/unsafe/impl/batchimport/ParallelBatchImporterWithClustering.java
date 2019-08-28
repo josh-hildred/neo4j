@@ -22,6 +22,7 @@ package org.neo4j.unsafe.impl.batchimport;
 import java.io.IOException;
 
 import org.neo4j.io.fs.FileSystemAbstraction;
+import org.neo4j.io.fs.FileUtils;
 import org.neo4j.io.layout.DatabaseLayout;
 import org.neo4j.io.pagecache.PageCache;
 import org.neo4j.io.pagecache.tracing.PageCacheTracer;
@@ -104,7 +105,7 @@ public class ParallelBatchImporterWithClustering implements BatchImporter
         {
             finalStore.createNew();
             store.createNew();
-            logic.initialize( input );
+            logic.initialize(input);
 
             logic.importNodes();
             logic.prepareIdMapper();
@@ -113,17 +114,20 @@ public class ParallelBatchImporterWithClustering implements BatchImporter
             logic.linkRelationshipsOfAllTypes();
             logic.defragmentRelationshipGroups();
             logic.buildCountsStore();
-
-            if ( config.clusterRecords() )
-            {
-                clusterLogic.initialize();
+            logic.success();
+            //store.flushAndForce();
+            //if ( config.clusterRecords() )
+            //{
+                /*clusterLogic.initialize();
                 clusterLogic.CalculateCluster(5, 25);
                 clusterLogic.calculateCounts();
                 //clusterLogic.printClusterData();
-                clusterLogic.writeToStores();
-            }
-            logic.success();
-
+                clusterLogic.writeToStores();*/
+            //}
+        }
+        if ( config.clusterRecords() )
+        {
+            FileUtils.copyRecursively(batchImportLayout.databaseDirectory(), clusteringImportLayout.databaseDirectory());
         }
     }
 }

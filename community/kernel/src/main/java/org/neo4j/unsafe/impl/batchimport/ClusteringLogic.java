@@ -240,19 +240,19 @@ public class ClusteringLogic implements Closeable
 
     private boolean copyUnchangedStores()
     {
-        printMsg( "in copy unchanged stores", 0, 0 );
+        printMsg("in copy unchanged stores", 0, 0);
         try
         {
-            FileUtils.copyFile( initialNeostores.getNeoStores().getLabelTokenStore().getStorageFile(),
-                    finalNeoStores.getNeoStores().getLabelTokenStore().getStorageFile() );
-            FileUtils.copyFile( initialNeostores.getNeoStores().getPropertyKeyTokenStore().getStorageFile(),
-                    finalNeoStores.getNeoStores().getPropertyKeyTokenStore().getStorageFile() );
-            FileUtils.copyFile( initialNeostores.getNeoStores().getMetaDataStore().getStorageFile(),
-                    finalNeoStores.getNeoStores().getMetaDataStore().getStorageFile() );
-            FileUtils.copyFile( initialNeostores.getNeoStores().getRelationshipGroupStore().getStorageFile(),
-                    finalNeoStores.getNeoStores().getRelationshipGroupStore().getStorageFile() );
-            FileUtils.copyFile( initialNeostores.getNeoStores().getRelationshipTypeTokenStore().getStorageFile(),
-                    finalNeoStores.getNeoStores().getRelationshipTypeTokenStore().getStorageFile() );
+            FileUtils.copyFile(initialNeostores.getNeoStores().getLabelTokenStore().getStorageFile(),
+                    finalNeoStores.getNeoStores().getLabelTokenStore().getStorageFile());
+            FileUtils.copyFile(initialNeostores.getNeoStores().getPropertyKeyTokenStore().getStorageFile(),
+                    finalNeoStores.getNeoStores().getPropertyKeyTokenStore().getStorageFile());
+            FileUtils.copyFile(initialNeostores.getNeoStores().getMetaDataStore().getStorageFile(),
+                    finalNeoStores.getNeoStores().getMetaDataStore().getStorageFile());
+            FileUtils.copyFile(initialNeostores.getNeoStores().getRelationshipGroupStore().getStorageFile(),
+                    finalNeoStores.getNeoStores().getRelationshipGroupStore().getStorageFile());
+            FileUtils.copyFile(initialNeostores.getNeoStores().getRelationshipTypeTokenStore().getStorageFile(),
+                    finalNeoStores.getNeoStores().getRelationshipTypeTokenStore().getStorageFile());
         }
         catch ( IOException e )
         {
