@@ -19,6 +19,7 @@
  */
 package org.neo4j.unsafe.impl.batchimport.store;
 
+import org.neo4j.index.internal.gbptree.RecoveryCleanupWorkCollector;
 import org.neo4j.io.fs.FileSystemAbstraction;
 import org.neo4j.io.fs.FileUtils;
 import org.neo4j.io.layout.DatabaseFile;
@@ -31,7 +32,10 @@ import org.neo4j.io.pagecache.tracing.cursor.DefaultPageCursorTracerSupplier;
 import org.neo4j.io.pagecache.tracing.cursor.PageCursorTracerSupplier;
 import org.neo4j.io.pagecache.tracing.cursor.context.EmptyVersionContextSupplier;
 import org.neo4j.io.pagecache.tracing.cursor.context.VersionContextSupplier;
+import org.neo4j.kernel.api.labelscan.LabelScanStore;
 import org.neo4j.kernel.configuration.Config;
+import org.neo4j.kernel.impl.api.scan.FullStoreChangeStream;
+import org.neo4j.kernel.impl.index.labelscan.NativeLabelScanStore;
 import org.neo4j.kernel.impl.pagecache.ConfiguringPageCacheFactory;
 import org.neo4j.kernel.impl.store.NeoStores;
 import org.neo4j.kernel.impl.store.NodeStore;
@@ -47,6 +51,7 @@ import org.neo4j.kernel.impl.store.id.DefaultIdGeneratorFactory;
 import org.neo4j.kernel.impl.store.id.IdGeneratorFactory;
 import org.neo4j.kernel.impl.store.record.AbstractBaseRecord;
 import org.neo4j.kernel.lifecycle.LifeSupport;
+import org.neo4j.kernel.monitoring.Monitors;
 import org.neo4j.logging.LogProvider;
 import org.neo4j.logging.internal.LogService;
 import org.neo4j.scheduler.JobScheduler;
@@ -90,6 +95,7 @@ public class ClusteringNeoStores implements AutoCloseable, MemoryStatsVisitor.Vi
     private NeoStores fromNeoStores;
     private LifeSupport life = new LifeSupport();
     private PageCacheFlusher flusher;
+    private LabelScanStore labelScanStore;
 
     private boolean successful;
 
@@ -109,6 +115,7 @@ public class ClusteringNeoStores implements AutoCloseable, MemoryStatsVisitor.Vi
         this.initialIds = initialIds;
         this.externalPageCache = externalPageCache;
         this.idGeneratorFactory = new DefaultIdGeneratorFactory( fileSystem );
+
     }
 
     private boolean databaseExistsAndContainsData()
@@ -141,10 +148,7 @@ public class ClusteringNeoStores implements AutoCloseable, MemoryStatsVisitor.Vi
     {
         assertDatabaseIsEmptyOrNonExistent();
 
-        // There may have been a previous import which was killed before it even started, where the label scan store could
-        // be in a semi-initialized state. Better to be on the safe side and deleted it. We get her after determining that
-        // the db is either completely empty or non-existent anyway, so deleting this file is OK.
-        //fileSystem.deleteFile(getLabelScanStoreFile(databaseLayout));
+        fileSystem.deleteFile( getLabelScanStoreFile( toDatabaseLayout ) );
 
         instantiateStores();
         /*fromNeoStores.getMetaDataStore().setLastCommittedAndClosedTransactionId(
@@ -183,9 +187,9 @@ public class ClusteringNeoStores implements AutoCloseable, MemoryStatsVisitor.Vi
     {
         life = new LifeSupport();
         life.start();
-        /*labelScanStore = new NativeLabelScanStore( pageCache, databaseLayout, fileSystem, FullStoreChangeStream.EMPTY, false, new Monitors(),
+        labelScanStore = new NativeLabelScanStore( pageCache, toDatabaseLayout, fileSystem, FullStoreChangeStream.EMPTY, false, new Monitors(),
                 RecoveryCleanupWorkCollector.immediate() );
-        life.add( labelScanStore );*/
+        life.add( labelScanStore );
     }
 
     private boolean instantiateStores() throws IOException
@@ -194,7 +198,7 @@ public class ClusteringNeoStores implements AutoCloseable, MemoryStatsVisitor.Vi
         FileUtils.copyRecursively(fromDatabaseLayout.databaseDirectory(), toDatabaseLayout.databaseDirectory());
         Predicate<StoreType> predicate = new Predicate<StoreType>()
         {
-            private StoreType[] storesToCluster = {StoreType.NODE, StoreType.RELATIONSHIP, StoreType.PROPERTY};
+            private StoreType[] storesToCluster = {StoreType.NODE}; //, StoreType.RELATIONSHIP, StoreType.PROPERTY};
             @Override
             public boolean test( StoreType storeType )
             {
@@ -335,6 +339,11 @@ public class ClusteringNeoStores implements AutoCloseable, MemoryStatsVisitor.Vi
         return fromNeoStores.getCounts();
     }
 
+    public LabelScanStore getLabelScanStore()
+    {
+        return labelScanStore;
+    }
+
     @Override
     public void close() throws IOException
     {
@@ -348,9 +357,11 @@ public class ClusteringNeoStores implements AutoCloseable, MemoryStatsVisitor.Vi
 
         // Flush out all pending changes
         //closeAll( propertyKeyRepository, labelRepository, relationshipTypeRepository );
-
+        //labelScanStore.newWriter().close();
+        pageCache.getExistingMapping( labelScanStore.getLabelScanStoreFile() ).get().close();
         // Close the neo store
         life.shutdown();
+        labelScanStore.shutdown();
         closeAll( toNeoStores, fromNeoStores );
         if ( !externalPageCache )
         {
@@ -378,11 +389,6 @@ public class ClusteringNeoStores implements AutoCloseable, MemoryStatsVisitor.Vi
     {
         return fromNeoStores.getMetaDataStore().getLastCommittedTransactionId();
     }
-
-    /*public LabelScanStore getLabelScanStore()
-    {
-        return labelScanStore;
-    }*/
 
     public NeoStores getToNeoStores()
     {
@@ -454,11 +460,11 @@ public class ClusteringNeoStores implements AutoCloseable, MemoryStatsVisitor.Vi
         {
             temporaryNeoStores.flush( UNLIMITED );
             flushIdFiles( temporaryNeoStores, TEMP_STORE_TYPES );
-        }
+        }*/
         if ( labelScanStore != null )
         {
             labelScanStore.force( UNLIMITED );
-        }*/
+        }
     }
 
     public void success()

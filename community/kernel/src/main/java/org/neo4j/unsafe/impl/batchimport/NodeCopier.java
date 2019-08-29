@@ -55,14 +55,14 @@ public class NodeCopier extends EntityCopier
         cursor.single( id );
         cursor.next();
         NodeRecord record = cursor.clone();
-        if ( !record.isDense() )
+        /*if ( !record.isDense() )
         {
             record.setNextRel(copier.copyChain(record.getNextRel(), record.getId() ) );
-        }
+        }*/
         long newId = ids.nextId();
         nodeCache.putIdMap( (int) id, (int) newId );
-        long propId = copyPropertyChain( record.getNextProp(), newId );
-        record.setNextProp( propId );
+        //long propId = copyPropertyChain( record.getNextProp(), newId );
+        //record.setNextProp( propId );
         record.setId( newId );
         toStores.getNodeStore().updateRecord( record );
         RecordNodeCursor cursorTest = cursorFactory.getNodeCursor( toStores.getNodeStore() );
@@ -70,7 +70,7 @@ public class NodeCopier extends EntityCopier
         cursorTest.next();
         boolean failed = false;
         PrintWriter printWriter;
-        if ( cursorTest.getId() != newId || cursorTest.getNextProp() != propId || !cursor.inUse() )
+        /*if ( cursorTest.getId() != newId || cursorTest.getNextProp() != propId || !cursor.inUse() )
         {
             try
             {
@@ -85,9 +85,10 @@ public class NodeCopier extends EntityCopier
             {
                 failed = true;
             }
-        }
+        } */
         assert cursorTest.getId() == newId;
-        assert cursorTest.getNextProp() == propId;
+        assert cursorTest.getNextProp() == cursor.getNextProp();
+        assert cursorTest.getNextRel() == cursor.getNextRel();
         assert cursorTest.inUse();
         cursor.close();
         cursorTest.close();
