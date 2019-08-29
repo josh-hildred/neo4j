@@ -20,6 +20,8 @@
 package org.neo4j.unsafe.impl.batchimport.store;
 
 import org.neo4j.io.fs.FileSystemAbstraction;
+import org.neo4j.io.fs.FileUtils;
+import org.neo4j.io.layout.DatabaseFile;
 import org.neo4j.io.layout.DatabaseLayout;
 import org.neo4j.io.pagecache.PageCache;
 import org.neo4j.io.pagecache.PagedFile;
@@ -58,6 +60,7 @@ import java.io.IOException;
 import java.nio.file.OpenOption;
 import java.nio.file.StandardOpenOption;
 import java.util.Optional;
+import java.util.function.Predicate;
 
 import static java.lang.String.valueOf;
 import static org.neo4j.graphdb.factory.GraphDatabaseSettings.dense_node_threshold;
@@ -72,7 +75,8 @@ public class ClusteringNeoStores implements AutoCloseable, MemoryStatsVisitor.Vi
 {
     private final FileSystemAbstraction fileSystem;
     private final LogProvider logProvider;
-    private final DatabaseLayout databaseLayout;
+    private final DatabaseLayout toDatabaseLayout;
+    private final DatabaseLayout fromDatabaseLayout;
     private final Config neo4jConfig;
     private final Configuration importConfiguration;
     private final PageCache pageCache;
@@ -82,13 +86,14 @@ public class ClusteringNeoStores implements AutoCloseable, MemoryStatsVisitor.Vi
     private final boolean externalPageCache;
     private final IdGeneratorFactory idGeneratorFactory;
 
-    private NeoStores neoStores;
+    private NeoStores toNeoStores;
+    private NeoStores fromNeoStores;
     private LifeSupport life = new LifeSupport();
     private PageCacheFlusher flusher;
 
     private boolean successful;
 
-    private ClusteringNeoStores( FileSystemAbstraction fileSystem, PageCache pageCache, File databaseDirectory,
+    private ClusteringNeoStores( FileSystemAbstraction fileSystem, PageCache pageCache, File toDatabaseDirectory, File fromDatabaseDirectory,
                                 RecordFormats recordFormats, Config neo4jConfig, Configuration importConfiguration, LogService logService,
                                 AdditionalInitialIds initialIds, boolean externalPageCache, IoTracer ioTracer )
     {
@@ -96,7 +101,8 @@ public class ClusteringNeoStores implements AutoCloseable, MemoryStatsVisitor.Vi
         this.recordFormats = recordFormats;
         this.importConfiguration = importConfiguration;
         this.logProvider = logService.getInternalLogProvider();
-        this.databaseLayout = DatabaseLayout.of(databaseDirectory);
+        this.toDatabaseLayout = DatabaseLayout.of(toDatabaseDirectory);
+        this.fromDatabaseLayout = DatabaseLayout.of(fromDatabaseDirectory);
         this.neo4jConfig = neo4jConfig;
         this.pageCache = pageCache;
         this.ioTracer = ioTracer;
@@ -107,7 +113,7 @@ public class ClusteringNeoStores implements AutoCloseable, MemoryStatsVisitor.Vi
 
     private boolean databaseExistsAndContainsData()
     {
-        File metaDataFile = databaseLayout.metadataStore();
+        File metaDataFile = toDatabaseLayout.metadataStore();
         try ( PagedFile pagedFile = pageCache.map( metaDataFile, pageCache.pageSize(), StandardOpenOption.READ ) )
         {
             // OK so the db probably exists
@@ -118,7 +124,7 @@ public class ClusteringNeoStores implements AutoCloseable, MemoryStatsVisitor.Vi
             return false;
         }
 
-        try ( NeoStores stores = newStoreFactory(databaseLayout).openNeoStores(StoreType.NODE, StoreType.RELATIONSHIP ) )
+        try ( NeoStores stores = newStoreFactory(toDatabaseLayout).openNeoStores(StoreType.NODE, StoreType.RELATIONSHIP ) )
         {
             return stores.getNodeStore().getHighId() > 0 || stores.getRelationshipStore().getHighId() > 0;
         }
@@ -138,21 +144,38 @@ public class ClusteringNeoStores implements AutoCloseable, MemoryStatsVisitor.Vi
         // There may have been a previous import which was killed before it even started, where the label scan store could
         // be in a semi-initialized state. Better to be on the safe side and deleted it. We get her after determining that
         // the db is either completely empty or non-existent anyway, so deleting this file is OK.
-        fileSystem.deleteFile(getLabelScanStoreFile(databaseLayout));
+        //fileSystem.deleteFile(getLabelScanStoreFile(databaseLayout));
 
         instantiateStores();
-        neoStores.getMetaDataStore().setLastCommittedAndClosedTransactionId(
+        /*fromNeoStores.getMetaDataStore().setLastCommittedAndClosedTransactionId(
                 initialIds.lastCommittedTransactionId(), initialIds.lastCommittedTransactionChecksum(),
                 BASE_TX_COMMIT_TIMESTAMP, initialIds.lastCommittedTransactionLogByteOffset(),
-                initialIds.lastCommittedTransactionLogVersion());
-        neoStores.startCountStore();
+                initialIds.lastCommittedTransactionLogVersion());*/
+        toNeoStores.startCountStore();
+        fromNeoStores.startCountStore();
+
+        assert toNeoStores != null;
+        assert fromNeoStores != null;
     }
 
     public void assertDatabaseIsEmptyOrNonExistent()
     {
         if ( databaseExistsAndContainsData() )
         {
-            throw new IllegalStateException( databaseLayout.databaseDirectory() + " already contains data, cannot do import here" );
+            throw new IllegalStateException( toDatabaseLayout.databaseDirectory() + " already contains data, cannot do import here" );
+        }
+    }
+
+    private void deleteStoreFiles( DatabaseLayout databaseLayout, Predicate<StoreType> storesToKeep )
+    {
+        for ( StoreType type : StoreType.values() )
+        {
+            if ( type.isRecordStore() && !storesToKeep.test( type ) )
+            {
+                DatabaseFile databaseFile = type.getDatabaseFile();
+                databaseLayout.file( databaseFile ).forEach( fileSystem::deleteFile );
+                databaseLayout.idFile( databaseFile ).ifPresent( fileSystem::deleteFile );
+            }
         }
     }
 
@@ -165,9 +188,30 @@ public class ClusteringNeoStores implements AutoCloseable, MemoryStatsVisitor.Vi
         life.add( labelScanStore );*/
     }
 
-    private void instantiateStores()
+    private boolean instantiateStores() throws IOException
     {
-        neoStores = newStoreFactory(databaseLayout).openAllNeoStores(true);
+        fromNeoStores = newStoreFactory(fromDatabaseLayout).openAllNeoStores(true);
+        FileUtils.copyRecursively(fromDatabaseLayout.databaseDirectory(), toDatabaseLayout.databaseDirectory());
+        Predicate<StoreType> predicate = new Predicate<StoreType>()
+        {
+            private StoreType[] storesToCluster = {StoreType.NODE, StoreType.RELATIONSHIP, StoreType.PROPERTY};
+            @Override
+            public boolean test( StoreType storeType )
+            {
+                for ( int i = 0; i < storesToCluster.length; i++ )
+                {
+                    if ( storeType == storesToCluster[i] )
+                    {
+                        return false;
+                    }
+                }
+                return true;
+            }
+        };
+        deleteStoreFiles(toDatabaseLayout, predicate);
+
+        toNeoStores = newStoreFactory(toDatabaseLayout).openAllNeoStores(true);
+
         /*propertyKeyRepository = new BatchingTokenRepository.BatchingPropertyKeyTokenRepository(
                 neoStores.getPropertyKeyTokenStore() );
         labelRepository = new BatchingTokenRepository.BatchingLabelTokenRepository(
@@ -184,13 +228,14 @@ public class ClusteringNeoStores implements AutoCloseable, MemoryStatsVisitor.Vi
          recognizing that the db needs recovery when it looks at the tx log and also calling deleteIdGenerators. In the import case
          there are no tx logs at all, and therefore we do this manually right here.
         */
-        neoStores.deleteIdGenerators();
+        toNeoStores.deleteIdGenerators();
         //temporaryNeoStores.deleteIdGenerators();
 
-        neoStores.makeStoreOk();
+        toNeoStores.makeStoreOk();
         //temporaryNeoStores.makeStoreOk();
+        return true;
     }
-    public static ClusteringNeoStores ClusteringNeoStores( FileSystemAbstraction fileSystem, File storeDir,
+    public static ClusteringNeoStores ClusteringNeoStores( FileSystemAbstraction fileSystem, File toStoreDir, File fromStoreDir,
                                                       RecordFormats recordFormats, Configuration config, LogService logService, AdditionalInitialIds initialIds,
                                                       Config dbConfig, JobScheduler jobScheduler )
     {
@@ -199,18 +244,18 @@ public class ClusteringNeoStores implements AutoCloseable, MemoryStatsVisitor.Vi
         PageCache pageCache = createPageCache( fileSystem, neo4jConfig, logService.getInternalLogProvider(), tracer,
                 DefaultPageCursorTracerSupplier.INSTANCE, EmptyVersionContextSupplier.EMPTY, jobScheduler );
 
-        return new ClusteringNeoStores( fileSystem, pageCache, storeDir, recordFormats, neo4jConfig, config, logService,
+        return new ClusteringNeoStores( fileSystem, pageCache, toStoreDir, fromStoreDir, recordFormats, neo4jConfig, config, logService,
                 initialIds, false, tracer::bytesWritten );
     }
 
     public static ClusteringNeoStores ClusteringNeoStoresWithExternalPageCache( FileSystemAbstraction fileSystem,
-                                                                            PageCache pageCache, PageCacheTracer tracer, File storeDir,
+                                                                            PageCache pageCache, PageCacheTracer tracer, File toStoreDir, File fromStoreDir,
                                                                             RecordFormats recordFormats, Configuration config, LogService logService,
                                                                             AdditionalInitialIds initialIds, Config dbConfig )
     {
         Config neo4jConfig = getNeo4jConfig( config, dbConfig );
 
-        return new ClusteringNeoStores( fileSystem, pageCache, storeDir, recordFormats, neo4jConfig, config, logService,
+        return new ClusteringNeoStores( fileSystem, pageCache, toStoreDir, fromStoreDir, recordFormats, neo4jConfig, config, logService,
                 initialIds, true, tracer::bytesWritten );
     }
 
@@ -241,29 +286,53 @@ public class ClusteringNeoStores implements AutoCloseable, MemoryStatsVisitor.Vi
         return ioTracer;
     }
 
-    public NodeStore getNodeStore()
+    public NodeStore getToNodeStore()
     {
-        return neoStores.getNodeStore();
+        return toNeoStores.getNodeStore();
+    }
+    public NodeStore getFromNodeStore()
+    {
+        return fromNeoStores.getNodeStore();
     }
 
-    public PropertyStore getPropertyStore()
+    public PropertyStore getToPropertyStore()
     {
-        return neoStores.getPropertyStore();
+        return toNeoStores.getPropertyStore();
     }
 
-    public RelationshipStore getRelationshipStore()
+    public PropertyStore getFromPropertyStore()
     {
-        return neoStores.getRelationshipStore();
+        return fromNeoStores.getPropertyStore();
     }
 
-    public RelationshipGroupStore getRelationshipGroupStore()
+    public RelationshipStore getToRelationshipStore()
     {
-        return neoStores.getRelationshipGroupStore();
+        return toNeoStores.getRelationshipStore();
     }
 
-    public CountsTracker getCountsStore()
+    public RelationshipStore getFromRelationshipStore()
     {
-        return neoStores.getCounts();
+        return fromNeoStores.getRelationshipStore();
+    }
+
+    public RelationshipGroupStore getToRelationshipGroupStore()
+    {
+        return toNeoStores.getRelationshipGroupStore();
+    }
+
+    public RelationshipGroupStore getFromRelationshipGroupStore()
+    {
+        return fromNeoStores.getRelationshipGroupStore();
+    }
+
+    public CountsTracker getToCountsStore()
+    {
+        return toNeoStores.getCounts();
+    }
+
+    public CountsTracker getFromCountsStore()
+    {
+        return fromNeoStores.getCounts();
     }
 
     @Override
@@ -282,7 +351,7 @@ public class ClusteringNeoStores implements AutoCloseable, MemoryStatsVisitor.Vi
 
         // Close the neo store
         life.shutdown();
-        closeAll( neoStores );
+        closeAll( toNeoStores, fromNeoStores );
         if ( !externalPageCache )
         {
             pageCache.close();
@@ -307,7 +376,7 @@ public class ClusteringNeoStores implements AutoCloseable, MemoryStatsVisitor.Vi
 
     public long getLastCommittedTransactionId()
     {
-        return neoStores.getMetaDataStore().getLastCommittedTransactionId();
+        return fromNeoStores.getMetaDataStore().getLastCommittedTransactionId();
     }
 
     /*public LabelScanStore getLabelScanStore()
@@ -315,9 +384,14 @@ public class ClusteringNeoStores implements AutoCloseable, MemoryStatsVisitor.Vi
         return labelScanStore;
     }*/
 
-    public NeoStores getNeoStores()
+    public NeoStores getToNeoStores()
     {
-        return neoStores;
+        return toNeoStores;
+    }
+
+    public NeoStores getFromNeoStores()
+    {
+        return fromNeoStores;
     }
 
     public void startFlushingPageCache()
@@ -371,10 +445,10 @@ public class ClusteringNeoStores implements AutoCloseable, MemoryStatsVisitor.Vi
         {
             relationshipTypeRepository.flush();
         }*/
-        if ( neoStores != null )
+        if ( toNeoStores != null )
         {
-            neoStores.flush( UNLIMITED );
-            flushIdFiles( neoStores, StoreType.values() );
+            toNeoStores.flush( UNLIMITED );
+            flushIdFiles( toNeoStores, StoreType.values() );
         }
         /*if ( temporaryNeoStores != null )
         {
@@ -399,7 +473,7 @@ public class ClusteringNeoStores implements AutoCloseable, MemoryStatsVisitor.Vi
             if ( type.isRecordStore() )
             {
                 RecordStore<AbstractBaseRecord> recordStore = neoStores.getRecordStore( type );
-                Optional<File> idFile = databaseLayout.idFile( type.getDatabaseFile() );
+                Optional<File> idFile = toDatabaseLayout.idFile( type.getDatabaseFile() );
                 idFile.ifPresent( f -> idGeneratorFactory.create( f, recordStore.getHighId(), false ) );
             }
         }

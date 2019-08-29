@@ -66,4 +66,15 @@ public class RecordCursorHack //extends AutoClosable
     {
         return new RecordRelationshipScanCursorHack( relationshipStore );
     }
+    /*
+    public static class RecordRelationshipGroupScanCursor
+    {
+        RelationshipGroupStore relationshipGroupStore;
+
+        RecordRelationshipGroupScanCursor( RelationshipGroupStore relationshipGroupStore )
+        {
+            this.relationshipGroupStore = relationshipGroupStore;
+        }
+    }
+    */
 }

@@ -98,12 +98,9 @@ public class ParallelBatchImporterWithClustering implements BatchImporter
         try ( BatchingNeoStores store = instantiateNeoStores( fileSystem, batchImportLayout.databaseDirectory(), externalPageCache, recordFormats,
                       config, logService, additionalInitialIds, dbConfig, jobScheduler );
               ImportLogic logic = new ImportLogic( batchImportLayout.databaseDirectory(), fileSystem, store, config, logService,
-                      executionMonitor, recordFormats, monitor );
-              ClusteringNeoStores finalStore = ClusteringNeoStores.ClusteringNeoStores( fileSystem, clusteringImportLayout.databaseDirectory(), recordFormats,
-                      config, logService, additionalInitialIds, dbConfig, jobScheduler);
-              ClusteringLogic clusterLogic = new ClusteringLogic( finalStore, store ) )
+                      executionMonitor, recordFormats, monitor )
+        )
         {
-            finalStore.createNew();
             store.createNew();
             logic.initialize(input);
 
@@ -115,19 +112,24 @@ public class ParallelBatchImporterWithClustering implements BatchImporter
             logic.defragmentRelationshipGroups();
             logic.buildCountsStore();
             logic.success();
-            //store.flushAndForce();
-            //if ( config.clusterRecords() )
-            //{
-                /*clusterLogic.initialize();
-                clusterLogic.CalculateCluster(5, 25);
-                clusterLogic.calculateCounts();
-                //clusterLogic.printClusterData();
-                clusterLogic.writeToStores();*/
-            //}
         }
         if ( config.clusterRecords() )
         {
-            FileUtils.copyRecursively(batchImportLayout.databaseDirectory(), clusteringImportLayout.databaseDirectory());
+            try (
+                    ClusteringNeoStores stores = ClusteringNeoStores.ClusteringNeoStores( fileSystem, clusteringImportLayout.databaseDirectory(),
+                            batchImportLayout.databaseDirectory(), recordFormats,
+                            config, logService, additionalInitialIds, dbConfig, jobScheduler);
+                    ClusteringLogic clusterLogic = new ClusteringLogic( stores ) )
+            {
+                stores.createNew();
+                assert stores.getFromNeoStores() != null;
+                assert stores.getToNeoStores() != null;
+                clusterLogic.initialize();
+                clusterLogic.CalculateCluster(5, 25);
+                clusterLogic.calculateCounts();
+                clusterLogic.printClusterData();
+                clusterLogic.writeToStores();
+            }
         }
     }
 }
