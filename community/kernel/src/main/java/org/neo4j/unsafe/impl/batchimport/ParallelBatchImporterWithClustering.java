@@ -129,6 +129,7 @@ public class ParallelBatchImporterWithClustering implements BatchImporter
                 clusterLogic.calculateCounts();
                 clusterLogic.printClusterData();
                 clusterLogic.writeToStores();
+                clusterLogic.buildLabelScanStore();
             }
         }
     }

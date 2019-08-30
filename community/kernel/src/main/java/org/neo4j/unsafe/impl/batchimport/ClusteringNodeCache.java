@@ -223,6 +223,11 @@ public class ClusteringNodeCache implements AutoCloseable
 
     void printClusterData()
     {
+        int totalNodes = clusterSizes[0];
+        for ( int i = 1; i < highClusterId + 1; i++ )
+        {
+            totalNodes += clusterSizes[i + 1];
+        }
         boolean failed = false;
         PrintWriter printWriter;
         try
@@ -230,6 +235,7 @@ public class ClusteringNodeCache implements AutoCloseable
             FileWriter fileWriter = new FileWriter( "/home/josh/Projects/URA_neo4j/clusterdata.txt", true );
             BufferedWriter bufferedWriter = new BufferedWriter( fileWriter );
             printWriter = new PrintWriter( bufferedWriter );
+            printWriter.printf( "total nodes clustered %d\n", totalNodes );
             for ( int i = -1; i < highClusterId + 1; i++ )
             {
                 printWriter.printf( "ClusterId ID %d\n Size of Cluster %d\n", i, clusterSizes[i + 1] );

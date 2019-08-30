@@ -358,10 +358,10 @@ public class ClusteringNeoStores implements AutoCloseable, MemoryStatsVisitor.Vi
         // Flush out all pending changes
         //closeAll( propertyKeyRepository, labelRepository, relationshipTypeRepository );
         //labelScanStore.newWriter().close();
-        pageCache.getExistingMapping( labelScanStore.getLabelScanStoreFile() ).get().close();
+        //pageCache.getExistingMapping( labelScanStore.getLabelScanStoreFile() ).get().close();
         // Close the neo store
         life.shutdown();
-        labelScanStore.shutdown();
+        //labelScanStore.shutdown();
         closeAll( toNeoStores, fromNeoStores );
         if ( !externalPageCache )
         {

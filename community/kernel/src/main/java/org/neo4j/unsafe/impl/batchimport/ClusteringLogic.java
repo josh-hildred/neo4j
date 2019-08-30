@@ -21,11 +21,16 @@ package org.neo4j.unsafe.impl.batchimport;
 
 import org.neo4j.io.fs.FileUtils;
 import org.neo4j.io.pagecache.PageCursor;
+import org.neo4j.kernel.api.StatementConstants;
+import org.neo4j.kernel.api.labelscan.LabelScanWriter;
+import org.neo4j.kernel.impl.api.CountsAccessor;
 import org.neo4j.kernel.impl.storageengine.impl.recordstorage.RecordCursorHack;
 import org.neo4j.kernel.impl.storageengine.impl.recordstorage.RecordNodeCursor;
 import org.neo4j.kernel.impl.store.InvalidRecordException;
 import org.neo4j.kernel.impl.store.NeoStores;
+import org.neo4j.kernel.impl.store.NodeLabelsField;
 import org.neo4j.kernel.impl.store.RelationshipGroupStore;
+import org.neo4j.kernel.impl.store.record.NodeRecord;
 import org.neo4j.kernel.impl.store.record.RecordLoad;
 import org.neo4j.kernel.impl.store.record.RelationshipGroupRecord;
 import org.neo4j.logging.internal.LogService;
@@ -37,6 +42,10 @@ import java.io.FileWriter;
 import java.io.IOException;
 import java.io.PrintWriter;
 import java.util.LinkedList;
+
+import static org.neo4j.collection.PrimitiveLongCollections.EMPTY_LONG_ARRAY;
+import static org.neo4j.kernel.api.labelscan.NodeLabelUpdate.labelChanges;
+import static org.neo4j.kernel.impl.store.NodeLabelsField.get;
 
 
 public class ClusteringLogic implements Closeable
@@ -215,6 +224,10 @@ public class ClusteringLogic implements Closeable
             NodeCopier nodeCopier = new NodeCopier( initialNeoStores, finalNeoStores, newNodeId, propId, nodeCache );
             RelationshipCopier relationshipCopier = new RelationshipCopier( initialNeoStores, finalNeoStores, relId, propId );
             //printMsg( "writing nodes to store for cluster %d ", i, 0 );
+            if ( nodes == null )
+            {
+                continue;
+            }
             while ( !nodes.isEmpty() )
             {
                 long nodeId = (long) nodes.pop();
@@ -236,19 +249,22 @@ public class ClusteringLogic implements Closeable
         printMsg( "writing noise", 0, 0 );
         NodeCopier nodeCopier = new NodeCopier( initialNeoStores, finalNeoStores, newNodeId, propId, nodeCache );
         RelationshipCopier relationshipCopier = new RelationshipCopier( initialNeoStores, finalNeoStores, relId, propId );
-        while ( !noise.isEmpty() )
+        if ( noise != null )
         {
-            nodeCopier.copy( (long) noise.pop(), relationshipCopier );
+            while ( !noise.isEmpty() )
+            {
+                nodeCopier.copy((long) noise.pop(), relationshipCopier);
+            }
         }
         updateRecordPointers();
-        try
+        /*try
         {
             neoStores.getLabelScanStore().init();
         }
         catch ( IOException e )
         {
             assert false;
-        }
+        }*/
     }
 
     private void updateRecordPointers()
@@ -327,6 +343,54 @@ public class ClusteringLogic implements Closeable
     */
         relationshipCursor.close();
     }
+
+    public void buildLabelScanStore() throws IOException
+    {
+        LabelScanWriter writer = neoStores.getLabelScanStore().newWriter();
+        RecordNodeCursor node = cursorFactory.getNodeCursor( neoStores.getToNodeStore() );
+        node.scan();
+        while ( node.next() )
+        {
+            if ( node.inUse() )
+            {
+                writer.write( labelChanges( node.getId(), EMPTY_LONG_ARRAY, get( node, neoStores.getToNodeStore() ) ) );
+            }
+        }
+        node.close();
+        writer.close();
+    }
+
+    public void buildCountsStore()
+    {
+        int highLabelId = (int) neoStores.getToNeoStores().getLabelTokenStore().getHighId();
+        int anyLabel = highLabelId;
+        // Instantiate with high id + 1 since we need that extra slot for the ANY count
+        long []labelCounts = new long[highLabelId + 1];
+        CountsAccessor.Updater counts = neoStores.getToNeoStores().getCounts().reset(
+                neoStores.getToNeoStores().getMetaDataStore().getLastCommittedTransactionId() );
+
+        RecordNodeCursor node = cursorFactory.getNodeCursor( neoStores.getToNodeStore() );
+        node.scan();
+        while ( node.next() )
+        {
+            long[] labels = NodeLabelsField.get( node, neoStores.getToNodeStore() );
+            if ( labels.length > 0 )
+            {
+                for ( long labelId : labels )
+                {
+                    labelCounts[(int) labelId]++;
+                }
+                //cache.put( node.getId(), labels );
+            }
+            labelCounts[anyLabel]++;
+
+        }
+        for ( int i = 0; i < labelCounts.length; i++ )
+        {
+                counts.incrementNodeCount( i == anyLabel ? StatementConstants.ANY_LABEL : i, labelCounts[i] );
+        }
+    }
+
 
     private boolean copyUnchangedStores()
     {
