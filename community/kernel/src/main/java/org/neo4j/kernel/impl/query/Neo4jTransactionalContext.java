@@ -39,6 +39,11 @@ import org.neo4j.kernel.impl.coreapi.InternalTransaction;
 import org.neo4j.kernel.impl.coreapi.PropertyContainerLocker;
 import org.neo4j.kernel.impl.query.statistic.StatisticProvider;
 
+import java.io.BufferedWriter;
+import java.io.FileWriter;
+import java.io.IOException;
+import java.io.PrintWriter;
+
 public class Neo4jTransactionalContext implements TransactionalContext
 {
     private final GraphDatabaseQueryService graph;
@@ -114,6 +119,19 @@ public class Neo4jTransactionalContext implements TransactionalContext
     {
         if ( isOpen )
         {
+            try ( FileWriter fileWriter = new FileWriter( "/home/josh/Projects/URA_neo4j/querystats.txt", true );
+                BufferedWriter bufferedWriter = new BufferedWriter( fileWriter );
+                PrintWriter printWriter = new PrintWriter( bufferedWriter ) )
+            {
+                printWriter.printf( "Query: %s\n", executingQuery.queryText() );
+                printWriter.printf( "CacheHits = %d\nCacheMisses = %d\n",
+                        kernelStatisticProvider().getPageCacheHits(), kernelStatisticProvider().getPageCacheMisses() );
+            }
+            catch ( IOException e )
+            {
+                int fail = 0;
+            }
+
             try
             {
                 statement.queryRegistration().unregisterExecutingQuery( executingQuery );

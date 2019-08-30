@@ -125,7 +125,7 @@ public class ParallelBatchImporterWithClustering implements BatchImporter
                 assert stores.getFromNeoStores() != null;
                 assert stores.getToNeoStores() != null;
                 clusterLogic.initialize();
-                clusterLogic.CalculateCluster(5, 25);
+                clusterLogic.CalculateCluster(4, 4);
                 clusterLogic.calculateCounts();
                 clusterLogic.printClusterData();
                 clusterLogic.writeToStores();
